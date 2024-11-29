@@ -1,5 +1,6 @@
 import joblib
 import pandas as pd
+import numpy as np
 from sklearn.preprocessing import LabelEncoder
 
 def load_model_and_scaler(model_path, scaler_path):
@@ -8,21 +9,38 @@ def load_model_and_scaler(model_path, scaler_path):
     scaler = joblib.load(scaler_path)
     return model, scaler
 
+
 def preprocess_new_data(new_data, scaler, encoder):
     """Preprocess the new data to match the trained model's input."""
-    # Ensure the 'gender' column is encoded using the same encoder
+    # Label encode the 'gender' column
     new_data['gender'] = encoder.transform(new_data['gender'])
 
-    # Ensure consistent one-hot encoding
-    new_data = pd.get_dummies(new_data, columns=['smoking_history'], drop_first=True)
+    # One-hot encode 'smoking_history' with all categories seen during training
+    all_categories = [
+        'smoking_history_current',
+        'smoking_history_ever',
+        'smoking_history_former',
+        'smoking_history_never',
+        'smoking_history_not current'
+    ]
     
-    # Ensure the number of columns matches the training data
-    new_data = new_data.reindex(columns=scaler.feature_names_in_, fill_value=0)
+    # One-hot encode and align to training columns
+    new_data_encoded = pd.get_dummies(new_data, columns=['smoking_history'])
+    for category in all_categories:
+        if category not in new_data_encoded:
+            new_data_encoded[category] = 0  # Add missing category with 0
 
-    # Scale the features using the loaded scaler
-    X_new = scaler.transform(new_data)
+    # Ensure the column order matches the training data
+    new_data_encoded = new_data_encoded[[
+        'gender', 'age', 'hypertension', 'heart_disease', 'bmi',
+        'HbA1c_level', 'blood_glucose_level'
+    ] + all_categories]
+
+    # Scale the features
+    X_new = scaler.transform(new_data_encoded)
 
     return X_new
+
 
 
 def predict_single(new_data, model, scaler, encoder):
