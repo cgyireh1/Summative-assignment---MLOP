@@ -42,7 +42,7 @@ def evaluate_model(model, X_test, y_test):
 
     return acc, cm, report
 
-def save_model(model, model_dir='models', verbose=True):
+def save_model(model, model_dir='models/models', verbose=True):
     """
     Save the trained model with a unique name following the pattern 'retrained_model_{number}.pkl'.
 
