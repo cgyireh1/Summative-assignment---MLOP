@@ -1,3 +1,5 @@
+import os
+import pickle as pk
 import joblib
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -40,9 +42,45 @@ def evaluate_model(model, X_test, y_test):
 
     return acc, cm, report
 
-def save_model(model, file_path):
-    """Saves the trained model to a file."""
-    joblib.dump(model, file_path)
+def save_model(model, model_dir='models', verbose=True):
+    """
+    Save the trained model with a unique name following the pattern 'retrained_model_{number}.pkl'.
+
+    Args:
+        model: The trained model to be saved.
+        model_dir (str): Directory where the model will be saved.
+        verbose (bool): Whether to print a confirmation message. Defaults to True.
+
+    Returns:
+        str: The filename of the saved model.
+    """
+    # Ensure the directory exists
+    if not os.path.exists(model_dir):
+        os.makedirs(model_dir)
+
+    # List existing model files with the naming pattern
+    model_files = [f for f in os.listdir(model_dir) if f.startswith('retrained_model_')]
+
+    # Determine the next model number
+    model_numbers = [
+        int(f.split('_')[2].split('.')[0]) for f in model_files if f.split('_')[2].split('.')[0].isdigit()
+    ]
+    next_model_number = max(model_numbers, default=0) + 1
+
+    # Construct the filename
+    model_filename = os.path.join(model_dir, f'retrained_model_{next_model_number}.pkl')
+
+    # Save the model to the file
+    with open(model_filename, 'wb') as file:
+        pk.dump(model, file)
+
+    # Print confirmation if verbose is True
+    if verbose:
+        print(f"Model successfully saved as {model_filename}")
+
+    return model_filename
+
+
 
 def load_model(file_path):
     """Loads a trained model from a file."""
@@ -58,4 +96,3 @@ def retrain_model(X_train, y_train, model_path='models/random_forest_model.pkl')
     save_model(model, model_path)
     
     return model
-
