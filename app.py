@@ -181,8 +181,8 @@ async def retrain_model(data_file: UploadFile = File(...), model_parameters: str
         # Load dataset
         data = pd.read_csv(file_location)
         
-        X = data.drop("target", axis=1)
-        y = data["target"]
+        X = data.drop("Diabetes", axis=1)
+        y = data["Diabetes"]
         
         # Split dataset
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2)
