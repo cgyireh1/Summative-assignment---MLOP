@@ -60,7 +60,7 @@ class DataPrediction:
         prediction = self.model.predict(X_new)
         return "Diabetes" if prediction[0] == 1 else "No Diabetes"
 
-
+# Data for testing on the API
 # {
 #   "gender": "Female",
 #   "age": "25",

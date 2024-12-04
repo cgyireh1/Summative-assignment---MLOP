@@ -13,7 +13,6 @@ from src.preprocessing import DataPreprocessing
 from src.model import ModelPipeline
 from src.prediction import DataPrediction
 
-# Initialize FastAPI app
 app = FastAPI()
 
 # Paths
@@ -29,7 +28,7 @@ if not os.path.exists(UPLOAD_DIR):
 data_predictor = DataPrediction(MODEL_PATH, SCALER_PATH, ENCODER_PATH)
 model_pipeline = ModelPipeline()
 
-# Store the most recent file path
+
 recent_file_path = None
 
 @app.get("/")
@@ -42,7 +41,6 @@ async def predict(data: dict):
     Predict diabetes for a single data point.
     """
     try:
-        # Ensure the input data matches the expected feature names
         expected_features = ['gender', 'age', 'hypertension', 'heart_disease', 
                              'bmi', 'HbA1c_level', 'blood_glucose_level', 'smoking_history']
 
@@ -54,7 +52,6 @@ async def predict(data: dict):
         # Convert input data into a DataFrame with proper column names
         data_df = pd.DataFrame([data], columns=expected_features)
 
-        # Debug: print the structure of the input data
         print(f"Input data for prediction: \n{data_df}")
 
         # Make a prediction
@@ -77,7 +74,7 @@ async def upload_data(file: UploadFile = File(...)):
     """
     global recent_file_path
     try:
-        # Add a timestamp to the uploaded file
+        # Add a timestamp to the uploaded file for easy tracking
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         file_name = f"{timestamp}_{file.filename}"
         file_path = os.path.join(UPLOAD_DIR, file_name)
@@ -87,7 +84,6 @@ async def upload_data(file: UploadFile = File(...)):
             content = await file.read()
             f.write(content)
 
-        # Validate file
         data_preprocessor = DataPreprocessing(file_path)
         if not data_preprocessor.validate_columns():
             os.remove(file_path)
@@ -96,7 +92,7 @@ async def upload_data(file: UploadFile = File(...)):
                 detail="Uploaded file does not contain required columns."
             )
 
-        # Update the recent file path
+        # Update recent file path
         recent_file_path = file_path
 
         return {"message": "File uploaded successfully", "file_path": file_path}
@@ -138,27 +134,24 @@ async def retrain_model(file: UploadFile = File(...)):
         data_preprocessor = DataPreprocessing(file_path)
         X, y = data_preprocessor.preprocess_data()
 
-        # Analyze class distribution
         class_distribution = y.value_counts().to_dict()
 
-        # Handle class imbalance
+        # Handling class imbalance
         from sklearn.utils import resample
         X, y = resample(X, y, replace=True, n_samples=len(y), stratify=y, random_state=42)
 
-        # Split data
+
         from sklearn.model_selection import train_test_split
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, stratify=y, random_state=42)
 
-        # Retrain model
         retrained_model, model_path = model_pipeline.retrain_model(X_train, y_train)
 
-        # Evaluate model
         acc, _, report = model_pipeline.evaluate_model(retrained_model, X_test, y_test)
 
         # Save updated model
         joblib.dump(retrained_model, MODEL_PATH)
 
-        # Return retraining results
+        # Retraining results
         return JSONResponse(content={
             "accuracy": acc,
             "class_distribution": class_distribution,
