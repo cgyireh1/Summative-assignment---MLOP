@@ -53,7 +53,7 @@ diabetes_prediction-ML_Pipeline_Summative/
 
 The web application is deployed and can be accessed at:
 
-- **Live Web App URL**: [https://diabetes-prediction-web-7f1ucunhx-carolines-projects-083a3393.vercel.app/](https://diabetes-prediction-web-app-l0ks.onrender.com)
+- **Live Web App URL**: [https://diabetes-prediction-web-7f1ucunhx-carolines-projects-083a3393.vercel.app/](https://diabetes-prediction-web-7f1ucunhx-carolines-projects-083a3393.vercel.app/)
 
 ---
 
