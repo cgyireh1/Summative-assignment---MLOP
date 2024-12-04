@@ -1,224 +1,193 @@
+from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi.responses import JSONResponse
+from datetime import datetime
+import pandas as pd
 import os
 import joblib
-import pandas as pd
 import json
-import shutil
-from pydantic import BaseModel, Field
-from fastapi import FastAPI, Form, UploadFile, Request, File
-from fastapi.responses import HTMLResponse, JSONResponse
-from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
+import matplotlib.pyplot as plt
+from io import BytesIO
+from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
+from src.preprocessing import DataPreprocessing
 from src.model import ModelPipeline
 from src.prediction import DataPrediction
-from src.preprocessing import DataPreprocessing
-from datetime import datetime
 
+# Initialize FastAPI app
 app = FastAPI()
 
+# Paths
+MODEL_PATH = "models/randomforest_model.pkl"
+SCALER_PATH = "models/scaler.pkl"
+ENCODER_PATH = "models/encoder.pkl"
+UPLOAD_DIR = "uploads"
 
-class FileUploadRequest(BaseModel):
-    file: UploadFile = File(..., description="CSV file with data for retraining")
-    retrain: bool = Form(False, description="Whether to retrain the model after file upload")
+if not os.path.exists(UPLOAD_DIR):
+    os.makedirs(UPLOAD_DIR)
 
-# Mount static files and pages
-app.mount("/static", StaticFiles(directory="static"), name="static")
-app.mount("/pages", StaticFiles(directory="pages"), name="pages")
+# Initialize prediction and retraining utilities
+data_predictor = DataPrediction(MODEL_PATH, SCALER_PATH, ENCODER_PATH)
+model_pipeline = ModelPipeline()
 
-templates = Jinja2Templates(directory="pages")
+# Store the most recent file path
+recent_file_path = None
 
-model_path = "models/randomforest_model.pkl"
-scaler_path = "models/scaler.pkl"
-encoder_path = "models/encoder.pkl"
+@app.get("/")
+async def root():
+    return {"message": "Welcome to the Diabetes Prediction API!"}
 
-# Initialize prediction object
-predictor = DataPrediction(model_path=model_path, scaler_path=scaler_path, encoder_path=encoder_path)
-
-# Path for the retraining logs
-LOG_FILE_PATH = "logs/retraining_log.json"
-
-# Create directories if they don't exist
-os.makedirs(os.path.dirname(LOG_FILE_PATH), exist_ok=True)
-os.makedirs("static/uploads", exist_ok=True)
-
-#  the uploaded file
-def save_uploaded_file(upload_file: UploadFile, destination: str):
-    with open(destination, "wb") as buffer:
-        shutil.copyfileobj(upload_file.file, buffer)
-
-class PredictionRequest(BaseModel):
-    gender: str = Field(..., example="e.g. Male/Female")
-    age: int = Field(..., example="Enter age")
-    hypertension: int = Field(..., example="e.g. 1 for Yes, 0 for No")
-    heart_disease: int = Field(..., example="e.g. 1 for Yes, 0 for No")
-    bmi: float = Field(..., example="e.g. 25")
-    HbA1c_level: float = Field(..., example="e.g. 7.0")
-    blood_glucose_level: float = Field(..., example="e.g. 100")
-    smoking_history: str = Field(..., example="e.g. Never or Former or Current")
-
-# Home Route (index.html)
-@app.get("/", response_class=HTMLResponse)
-async def root(request: Request):
-    return templates.TemplateResponse("index.html", {"request": request, "title": "Home"})
-
-# Model Prediction Endpoint
-@app.post("/predict/") 
-async def predict(request: PredictionRequest):
-    new_data = pd.DataFrame([{
-        "gender": request.gender,
-        "age": request.age,
-        "hypertension": request.hypertension,
-        "heart_disease": request.heart_disease,
-        "bmi": request.bmi,
-        "HbA1c_level": request.HbA1c_level,
-        "blood_glucose_level": request.blood_glucose_level,
-        "smoking_history": request.smoking_history,
-    }])
-
+@app.post("/predict")
+async def predict(data: dict):
+    """
+    Predict diabetes for a single data point.
+    """
     try:
-        print(f"Received data: {new_data}")  
-        
-        # Initialize predictor with correct paths
-        predictor = DataPrediction(model_path=model_path, scaler_path=scaler_path, encoder_path=encoder_path)
-        
-        # Prediction
-        prediction_result = predictor.predict_single(new_data)
-        
-        # Log the prediction result for debugging
-        print(f"Prediction result: {prediction_result}")
+        # Ensure the input data matches the expected feature names
+        expected_features = ['gender', 'age', 'hypertension', 'heart_disease', 
+                             'bmi', 'HbA1c_level', 'blood_glucose_level', 'smoking_history']
 
-        # Format the response based on prediction
-        if prediction_result == 1:
+        # Check for missing features
+        missing_features = [feature for feature in expected_features if feature not in data]
+        if missing_features:
+            raise HTTPException(status_code=400, detail=f"Missing features: {missing_features}")
+
+        # Convert input data into a DataFrame with proper column names
+        data_df = pd.DataFrame([data], columns=expected_features)
+
+        # Debug: print the structure of the input data
+        print(f"Input data for prediction: \n{data_df}")
+
+        # Make a prediction
+        prediction_result = data_predictor.predict_single(data_df)
+
+        if prediction_result == "Diabetes":
             prediction_message = "Diabetic. You should consult a doctor for a proper treatment plan 🫶."
         else:
-            prediction_message = "Non-Diabetes, You do not have diabetes. Keep up the healthy lifestyle! 🎉"
-        
-        return JSONResponse(content={"prediction": prediction_message})
+            prediction_message = "Non-Diabetic. You do not have diabetes. Keep up the healthy lifestyle! 🎉"
+
+        return {"prediction": prediction_message}
+
     except Exception as e:
-        print(f"Error occurred: {str(e)}")
-        return JSONResponse(content={"error": f"An error occurred: {str(e)}"})
+        raise HTTPException(status_code=400, detail=str(e))
 
-# Data Upload Page
-@app.get("/upload_data/", response_class=HTMLResponse)
-async def upload_page(request: Request):
-    return templates.TemplateResponse("upload.html", {"request": request, "title": "Upload Data"})
-
-# Data Upload Endpoint
-@app.post("/upload_data/")
-async def upload_data(file: UploadFile = File(...), retrain: str = Form("false")):
-    retrain = retrain.lower() == "true"
-    message = ""
-    error = ""
-
+@app.post("/upload")
+async def upload_data(file: UploadFile = File(...)):
+    """
+    Upload bulk data for retraining.
+    """
+    global recent_file_path
     try:
-        # Save the uploaded file with a timestamp to avoid overwriting
-        file_location = f"static/uploads/{datetime.now().strftime('%Y%m%d%H%M%S')}_{file.filename}"
-        save_uploaded_file(file, file_location)
+        # Add a timestamp to the uploaded file
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        file_name = f"{timestamp}_{file.filename}"
+        file_path = os.path.join(UPLOAD_DIR, file_name)
 
-        # Validate file structure
-        data_preprocessor = DataPreprocessing(file_location)
+        # Save uploaded file
+        with open(file_path, "wb") as f:
+            content = await file.read()
+            f.write(content)
+
+        # Validate file
+        data_preprocessor = DataPreprocessing(file_path)
         if not data_preprocessor.validate_columns():
-            error = "Invalid file structure. Please check the columns in the uploaded file."
-            return JSONResponse(content={"error": error}, status_code=400)
+            os.remove(file_path)
+            raise HTTPException(
+                status_code=400,
+                detail="Uploaded file does not contain required columns."
+            )
 
-        if retrain:
-            # Log retraining information
-            retraining_log = {
-                "timestamp": pd.Timestamp.now().isoformat(),
-                "dataset_used": file.filename,
-                "model_path": model_path,
-                "scaler_path": scaler_path,
-            }
+        # Update the recent file path
+        recent_file_path = file_path
 
-            # Append retraining logs
-            if os.path.exists(LOG_FILE_PATH):
-                with open(LOG_FILE_PATH, "r") as f:
-                    retraining_logs = json.load(f)
-            else:
-                retraining_logs = []
-
-            retraining_logs.append(retraining_log)
-            with open(LOG_FILE_PATH, "w") as f:
-                json.dump(retraining_logs, f, indent=4)
-
-            # Retrain the model
-            message = "File uploaded successfully, and retraining triggered."
-
-            # Perform retraining and save model
-            model_pipeline = ModelPipeline()
-            X, y = data_preprocessor.preprocess_data()
-
-            # Retrain the model
-            trained_model = model_pipeline.retrain_model(X, y)
-
-            # Save the retrained model
-            model_pipeline.save_model(trained_model)
-            model_pipeline.save_scaler()
-
-        else:
-            message = "File uploaded successfully"
-
-        return JSONResponse(content={"message": message})
-
+        return {"message": "File uploaded successfully", "file_path": file_path}
     except Exception as e:
-        error = f"Error: {str(e)}"
-        return JSONResponse(content={"error": error}, status_code=500)
+        raise HTTPException(status_code=400, detail=str(e))
 
 
-# Retrain Model Page
-@app.get("/retrain/", response_class=HTMLResponse)
-async def retrain_page(request: Request):
-    return templates.TemplateResponse("retrain.html", {"request": request, "title": "Retrain Model"})
-
-@app.post("/retrain")
-async def retrain_model(data_file: UploadFile = File(...), model_parameters: str = Form("default")):
+@app.post("/retrain-model")
+async def retrain_model(file: UploadFile = File(...)):
+    """
+    Retrain the model using uploaded data.
+    """
+    global recent_file_path
     try:
-        # Save the uploaded file
-        file_location = f"temp_{data_file.filename}"
-        with open(file_location, "wb") as file:
-            file.write(data_file.file.read())
-
-        # Load dataset
-        data = pd.read_csv(file_location)
-        
-        X = data.drop("target", axis=1)
-        y = data["target"]
-        
-        # Split dataset
-        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2)
-
-        # Initialize model with selected parameters
-        if model_parameters == "tuned":
-            model = RandomForestClassifier(n_estimators=200, max_depth=10)
+        if not file:
+            if not recent_file_path:
+                raise HTTPException(status_code=400, detail="No file uploaded.")
+            file_path = recent_file_path
         else:
-            model = RandomForestClassifier()  # 
-        # Retrain the model
-        model.fit(X_train, y_train)
+            # Save the uploaded file
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            file_name = f"{timestamp}_{file.filename}"
+            file_path = os.path.join(UPLOAD_DIR, file_name)
 
-        # Save the retrained model
-        model_filename = "retrained_model.pkl"
-        joblib.dump(model, model_filename)
+            with open(file_path, "wb") as f:
+                content = await file.read()
+                f.write(content)
+
+            # Validate file
+            data_preprocessor = DataPreprocessing(file_path)
+            if not data_preprocessor.validate_columns():
+                os.remove(file_path)
+                raise HTTPException(
+                    status_code=400,
+                    detail="Uploaded file does not contain required columns."
+                )
         
-        os.remove(file_location)
+        # Load and preprocess data
+        data_preprocessor = DataPreprocessing(file_path)
+        X, y = data_preprocessor.preprocess_data()
 
-        return JSONResponse(content={"message": "Model retrained successfully!"})
+        # Analyze class distribution
+        class_distribution = y.value_counts().to_dict()
 
+        # Handle class imbalance
+        from sklearn.utils import resample
+        X, y = resample(X, y, replace=True, n_samples=len(y), stratify=y, random_state=42)
+
+        # Split data
+        from sklearn.model_selection import train_test_split
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, stratify=y, random_state=42)
+
+        # Retrain model
+        retrained_model, model_path = model_pipeline.retrain_model(X_train, y_train)
+
+        # Evaluate model
+        acc, _, report = model_pipeline.evaluate_model(retrained_model, X_test, y_test)
+
+        # Save updated model
+        joblib.dump(retrained_model, MODEL_PATH)
+
+        # Return retraining results
+        return JSONResponse(content={
+            "accuracy": acc,
+            "class_distribution": class_distribution,
+            "classification_report": report
+        })
     except Exception as e:
-        return JSONResponse(status_code=500, content={"error": f"An error occurred: {str(e)}"})
+        raise HTTPException(status_code=400, detail=str(e))
 
+
+@app.get("/confusion-matrix")
+async def get_confusion_matrix():
+    """
+    Retrieve the most recent confusion matrix.
+    """
+    global recent_cm_path
+    if not recent_cm_path or not os.path.exists(recent_cm_path):
+        raise HTTPException(status_code=404, detail="Recent confusion matrix not found.")
+    return FileResponse(recent_cm_path)
 
 # CORS Configuration
 origins = [
-    "http://localhost:3000",
-    "http://localhost",
     "http://localhost:8000",
-    "http://localhost:8080",
-    "http://localhost:5000",
+    "http://localhost:3000",
+    "http://localhost:5173",
     "http://localhost:5501",
-    "https://diabetes-prediction-web-app-l0ks.onrender.com" # for production
+    "https://diabetes-prediction-web-app-l0ks.onrender.com"
 ]
 
-# Add CORS middleware
+# CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,

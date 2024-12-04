@@ -57,14 +57,6 @@ The web application is deployed and can be accessed at:
 
 ---
 
-## Requirements
-
-- **Python 3.8+**
-- **pip**
-- **virtualenv**
-
----
-
 ## Setup Instructions
 
 ### Step 1: Clone the repository
