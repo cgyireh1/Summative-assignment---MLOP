@@ -4,7 +4,7 @@ The **Diabetes Prediction Web Application** is a machine learning-based web app 
 - Make predictions on diabetes risk based on individual health inputs.
 - Upload datasets to retrain the machine learning model.
 
-The web app is built using **FastAPI** for the backend, which serves the model predictions, and **HTML/CSS/JavaScript** for the frontend. Users can upload data in CSV format to retrain the model and improve its predictions.
+The web app is built using **FastAPI** for the backend, which serves the model predictions, and **React** for the frontend. Users can upload data in CSV format to retrain the model and improve its predictions.
 
 ---
 
