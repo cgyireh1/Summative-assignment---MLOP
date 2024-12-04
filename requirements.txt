@@ -16,3 +16,4 @@ typing_extensions==4.12.2
 tzdata==2024.2
 python-multipart==0.0.5
 uvicorn==0.15.0
+pip==24.3.1
