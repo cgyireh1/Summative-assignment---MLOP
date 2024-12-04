@@ -17,3 +17,6 @@ tzdata==2024.2
 python-multipart==0.0.5
 uvicorn==0.15.0
 pip==24.3.1
+matplotlib==4.0.1
+scikit-learn==1.0.2
+
